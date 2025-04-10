@@ -3,6 +3,14 @@ import numpy as np
 from datetime import timedelta
 from geopy.distance import geodesic
 
+def generate_sequences(df, seq_length, feature_cols):
+    sequences = []
+    for i in range(len(df) - seq_length + 1):
+        # Генерация последовательности длиной seq_length
+        seq = df[feature_cols].iloc[i:i+seq_length].values
+        sequences.append(seq)
+    return np.array(sequences)
+
 def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
@@ -40,7 +48,7 @@ def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
     df["bearing_change"] = df["course"].diff().fillna(0)
     df["moving"] = (df["speed"] > 0).astype(int)
 
-    df = df[df["speed"] < df["speed"].quantile(0.99)]
+    #df = df[df["speed"] < df["speed"].quantile(0.99)]
     df.fillna(0, inplace=True)
 
     return df
@@ -59,13 +67,25 @@ def predict_eta_from_sequence(df_new, seq_length, scaler, lstm_feature_extractor
     if len(df_new_sorted) < seq_length:
         raise ValueError(f"Недостаточно данных: нужно минимум {seq_length}, получено {len(df_new_sorted)}")
 
+    # Получаем последние `seq_length` строк для последовательности
     seq_df = df_new_sorted[feature_cols].tail(seq_length)
+    
+    # Масштабируем данные
     scaled_seq = scaler.transform(seq_df.values)
+    
+    # Преобразуем данные в нужный формат для LSTM: (1, seq_length, num_features)
     input_data = scaled_seq.reshape(1, seq_length, len(feature_cols))
 
+    # Получаем признаки из LSTM
     lstm_features = lstm_feature_extractor.predict(input_data, verbose=0)
-    pred_scaled = xgb_model.predict(lstm_features.reshape(1, -1))
+    
+    # Преобразуем признаки в нужную форму для XGBoost
+    lstm_features_reshaped = lstm_features.reshape(1, -1)  # Убедитесь, что данные имеют правильную форму
 
+    # Прогнозируем с помощью XGBoost
+    pred_scaled = xgb_model.predict(lstm_features_reshaped)
+
+    # Возвращаем преобразованный результат
     eta_diff_seconds = float(label_scaler.inverse_transform(pred_scaled.reshape(-1, 1)).flatten()[0])
     eta_timestamp = df_new_sorted["timestamp"].iloc[-1] + timedelta(seconds=eta_diff_seconds)
 

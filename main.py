@@ -14,7 +14,7 @@ def main():
     xgb_path = os.path.join(model_dir, "xgb_model.json")
 
     # === Загрузка моделей и скейлеров ===
-    lstm_model, xgb_model, num_scaler, meteo_scaler = load_models(model_dir)
+    lstm_model, xgb_model, num_scaler, meteo_scaler, scaler, label_scaler = load_models(model_dir)
 
     # === Предсказание ===
     result = predict_from_csv(
@@ -23,7 +23,7 @@ def main():
         scaler=scaler,
         num_scaler=num_scaler,
         meteo_scaler=meteo_scaler,
-        lstm_feature_extractor=feature_extractor,
+        lstm_feature_extractor=lstm_model,
         xgb_model=xgb_model,
         label_scaler=label_scaler
     )

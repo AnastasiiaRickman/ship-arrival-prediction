@@ -3,6 +3,7 @@ import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_absolute_error
+from tensorflow.keras import regularizers
 import xgboost as xgb
 import joblib
 import os
@@ -21,22 +22,22 @@ LOCAL_DATA_DIR = "data"  # Эта папка будет заполнена за�
 
 os.makedirs(LOCAL_DATA_DIR, exist_ok=True)
 
-# Получаем список файлов с API
-response = requests.get(f"{API_URL}/files")
-csv_files = response.json()
+# # Получаем список файлов с API
+# response = requests.get(f"{API_URL}/files")
+# csv_files = response.json()
 
-# Скачиваем каждый CSV
-for filename in csv_files:
-    file_url = f"{API_URL}/files/{filename}"
-    file_path = os.path.join(LOCAL_DATA_DIR, filename)
+# # Скачиваем каждый CSV
+# for filename in csv_files:
+#     file_url = f"{API_URL}/files/{filename}"
+#     file_path = os.path.join(LOCAL_DATA_DIR, filename)
 
-    r = requests.get(file_url)
-    if r.status_code == 200:
-        with open(file_path, 'wb') as f:
-            f.write(r.content)
-        print(f"✅ Файл {filename} загружен.")
-    else:
-        print(f"❌ Ошибка при загрузке {filename}")
+#     r = requests.get(file_url)
+#     if r.status_code == 200:
+#         with open(file_path, 'wb') as f:
+#             f.write(r.content)
+#         print(f"✅ Файл {filename} загружен.")
+#     else:
+#         print(f"❌ Ошибка при загрузке {filename}")
 
 # После загрузки можно передать в пайплайн
 from preprocessing.load_and_clean import load_and_prepare_data
@@ -81,10 +82,14 @@ lstm_model = tf.keras.Sequential([
 
 lstm_model.compile(optimizer='adam', loss='mse')
 
-early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+
+early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
 
 print("🧠 Обучение LSTM...")
-lstm_model.fit(X_train, y_train, validation_data=(X_test, y_test), epochs=50, batch_size=16, callbacks=[early_stop])
+lstm_model.fit(X_train, y_train, validation_data=(X_test, y_test), epochs=100, batch_size=16, callbacks=[early_stop])
+
+inputs = tf.keras.Input(shape=(X_train.shape[1], X_train.shape[2]))
+
 
 # === 7. Feature extractor ===
 inputs = tf.keras.Input(shape=(X_train.shape[1], X_train.shape[2]))
@@ -104,14 +109,14 @@ X_test_features = feature_extractor.predict(X_test)
 
 # === 8. XGBoost ===
 xgb_model = xgb.XGBRegressor(
-    max_depth=6,
-    learning_rate=0.05,
-    n_estimators=500,
-    subsample=0.8,
-    colsample_bytree=0.8,
-    gamma=1,
-    reg_alpha=0.3,
-    reg_lambda=1.0,
+    max_depth=7,
+    learning_rate=0.18,
+    n_estimators=362,
+    subsample=0.9,
+    colsample_bytree=0.9,
+    gamma=0.008,
+    reg_alpha=0.23,
+    reg_lambda=0.37,
     objective='reg:squarederror'
 )
 
@@ -128,7 +133,7 @@ print("📊 MAE (original):", mean_absolute_error(y_test_original, y_pred_origin
 # === 9. Сохранение ===
 print("💾 Сохранение моделей...")
 os.makedirs("models", exist_ok=True)
-lstm_model.save("models/lstm_model.keras")
+feature_extractor.save("models/lstm_feature_extractor.keras")
 xgb_model.save_model("models/xgb_model.json")
 save_models(
     lstm_model=lstm_model,
@@ -140,3 +145,13 @@ save_models(
 )
 
 print("✅ Всё готово!")
+print("💾 Сохраняем извлечённые данные для экспериментов...")
+
+os.makedirs("artifacts", exist_ok=True)
+
+np.save("artifacts/X_train_features.npy", X_train_features)
+np.save("artifacts/X_test_features.npy", X_test_features)
+np.save("artifacts/y_train.npy", y_train)
+np.save("artifacts/y_test.npy", y_test)
+joblib.dump(label_scaler, "artifacts/label_scaler.pkl")
+
