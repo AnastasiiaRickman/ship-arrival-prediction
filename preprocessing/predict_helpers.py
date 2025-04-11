@@ -2,21 +2,13 @@ import pandas as pd
 import numpy as np
 from datetime import timedelta
 from geopy.distance import geodesic
-
-def generate_sequences(df, seq_length, feature_cols):
-    sequences = []
-    for i in range(len(df) - seq_length + 1):
-        # Генерация последовательности длиной seq_length
-        seq = df[feature_cols].iloc[i:i+seq_length].values
-        sequences.append(seq)
-    return np.array(sequences)
+from sklearn.preprocessing import MinMaxScaler
+from preprocessing.scaling import apply_feature_scalers_from_saved
+from api.get_meteo import get_meteo_data
 
 def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-
-    # Очистка и обработка
-    df = df.drop(columns=['seg_id', 'depth', 'latitude', 'longitude', 'time', 'index', 'mlotst_glor', 'mlotst_oras', 'siconc_glor', 'siconc_oras', 'sithick_glor', 'sithick_oras', 'so_glor', 'so_oras', 'thetao_glor', 'thetao_oras', 'uo_glor', 'uo_oras', 'vo_glor', 'vo_oras', 'so_glor', 'so_oras', 'zos_glor', 'zos_oras'], errors='ignore')
-
+    #df = get_meteo_data(df)
+    #df = df.drop(columns=['depth', 'latitude', 'longitude', 'time', 'index'])
     df = df.rename(columns={
         'mlotst_cglo': 'mlotst',
         'siconc_cglo': 'siconc',
@@ -25,71 +17,110 @@ def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
         'thetao_cglo': 'thetao',
         'uo_cglo': 'uo',
         'vo_cglo': 'vo',
+        'so_cglo': 'so',
         'zos_cglo': 'zos'
     })
 
+    # Преобразуем timestamp в datetime без временной зоны
     df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.tz_localize(None)
+
+    # === ВРЕМЕННЫЕ ПРИЗНАКИ ===
     df["hour"] = df["timestamp"].dt.hour
     df["dayofweek"] = df["timestamp"].dt.dayofweek
     df["month"] = df["timestamp"].dt.month
     df["season"] = df["month"].map(lambda x: (x % 12 + 3) // 3)
 
+    #  === ГЕОГРАФИЧЕСКИЕ ПРИЗНАКИ ===
+    def haversine(lat1, lon1, lat2, lon2):
+        return geodesic((lat1, lon1), (lat2, lon2)).km
+
     df["lat_diff"] = df["lat"].diff().fillna(0)
     df["lon_diff"] = df["lon"].diff().fillna(0)
     df["course_diff"] = df["course"].diff().fillna(0)
-
     df["distance_to_destination"] = df.apply(
-        lambda row: geodesic((row["lat"], row["lon"]), (row["lat_destination"], row["lon_destination"])).km,
-        axis=1
-    )
-    df["log_distance"] = np.log1p(df["distance_to_destination"])
+    lambda row: haversine(row["lat"], row["lon"], row["lat_destination"], row["lon_destination"]), axis=1)
+    df["log_distance"] = np.log1p(df["distance_to_destination"])  # Логарифмирование
+
+    # === ДИНАМИЧЕСКИЕ ПРИЗНАКИ ===
     df["speed_diff"] = df["speed"].diff().fillna(0)
     df["acceleration"] = df["speed_diff"].diff().fillna(0)
     df["bearing_change"] = df["course"].diff().fillna(0)
     df["moving"] = (df["speed"] > 0).astype(int)
+    for column in df.select_dtypes(include=['float64', 'int64']).columns:
+        df[column] = df[column].fillna(df[column].mean())
 
+    # === ОБРАБОТКА ВЫБРОСОВ ===
     #df = df[df["speed"] < df["speed"].quantile(0.99)]
-    df.fillna(0, inplace=True)
+
+    # === НОРМАЛИЗАЦИЯ ЧИСЛОВЫХ ПРИЗНАКОВ ===
+    num_cols = ["speed", "course", "lat_diff", "lon_diff", "course_diff", "log_distance", "speed_diff", "acceleration", "bearing_change"]
+    # === МЕТЕОПРИЗНАКИ ===
+    meteo_cols = [col for col in df.columns if any(x in col for x in ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
+    feature_cols = ["lat", "lon"] + num_cols + ["moving"] + meteo_cols
+    apply_feature_scalers_from_saved(df, num_cols, meteo_cols)
 
     return df
 
+import os
+import joblib
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+import xgboost as xgb
+from datetime import timedelta
 
-def apply_feature_scalers(df: pd.DataFrame, num_cols, meteo_cols, num_scaler, meteo_scaler):
-    df[num_cols] = num_scaler.transform(df[num_cols])
-    df[meteo_cols] = meteo_scaler.transform(df[meteo_cols])
-    return df
+def predict_eta_from_new_data(df_new, seq_length=10, model_dir='models'):
+    """
+    Прогноз ETA_diff и итогового ETA по последней строке новых данных судна.
 
+    Все модели и скейлеры загружаются из директории model_dir.
 
-def predict_eta_from_sequence(df_new, seq_length, scaler, lstm_feature_extractor,
-                               xgb_model, feature_cols, label_scaler):
-    df_new_sorted = df_new.sort_values(by="timestamp")
+    Возвращает:
+    - ETA_diff (в секундах)
+    - ETA (datetime: timestamp последней строки + ETA_diff)
+    """
+    if 'timestamp' not in df_new.columns:
+        raise ValueError("В DataFrame отсутствует колонка 'timestamp'.")
 
-    if len(df_new_sorted) < seq_length:
-        raise ValueError(f"Недостаточно данных: нужно минимум {seq_length}, получено {len(df_new_sorted)}")
+    # Загружаем feature_cols
+    feature_cols = joblib.load("models/feature_cols.pkl")
 
-    # Получаем последние `seq_length` строк для последовательности
-    seq_df = df_new_sorted[feature_cols].tail(seq_length)
-    
-    # Масштабируем данные
+    # Загружаем скейлеры
+    scaler = joblib.load("models/X_scaler.pkl")
+    label_scaler = joblib.load("models/label_scaler.pkl")
+
+    # Загружаем модели
+    lstm_feature_extractor = tf.keras.models.load_model("models/lstm_feature_extractor.keras")
+
+    xgb_model = xgb.XGBRegressor()
+    xgb_model.load_model("models/xgb_model.json")
+
+    # Сортировка по времени
+    df_sorted = df_new.sort_values(by="timestamp")
+
+    # Последние seq_length строк
+    seq_df = df_sorted[feature_cols].tail(seq_length)
+
+    if len(seq_df) < seq_length:
+        raise ValueError(f"Недостаточно данных: нужно минимум {seq_length}, а получено {len(seq_df)}")
+
+    # Масштабирование
     scaled_seq = scaler.transform(seq_df.values)
-    
-    # Преобразуем данные в нужный формат для LSTM: (1, seq_length, num_features)
     input_data = scaled_seq.reshape(1, seq_length, len(feature_cols))
 
-    # Получаем признаки из LSTM
+    # Извлечение признаков через LSTM
     lstm_features = lstm_feature_extractor.predict(input_data, verbose=0)
-    
-    # Преобразуем признаки в нужную форму для XGBoost
-    lstm_features_reshaped = lstm_features.reshape(1, -1)  # Убедитесь, что данные имеют правильную форму
 
-    # Прогнозируем с помощью XGBoost
-    pred_scaled = xgb_model.predict(lstm_features_reshaped)
-
-    # Возвращаем преобразованный результат
+    # Предсказание ETA_diff (в секундах)
+    pred_scaled = xgb_model.predict(lstm_features.reshape(1, -1))
     eta_diff_seconds = float(label_scaler.inverse_transform(pred_scaled.reshape(-1, 1)).flatten()[0])
-    eta_timestamp = df_new_sorted["timestamp"].iloc[-1] + timedelta(seconds=eta_diff_seconds)
+
+    # ETA на основе времени последней строки
+    last_time = df_sorted["timestamp"].iloc[-1]
+    eta = last_time + timedelta(seconds=eta_diff_seconds)
 
     return {
         "eta_diff_seconds": eta_diff_seconds,
-        "eta": eta_timestamp
+        "eta": eta,
+        "base_time": last_time
     }

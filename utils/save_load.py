@@ -4,16 +4,22 @@ import tensorflow as tf
 import xgboost as xgb
 
 
-import os
-import joblib
-import tensorflow as tf
-import xgboost as xgb
-
-def save_models(lstm_model, xgb_model, num_scaler, meteo_scaler, label_scaler=None, sequence_scaler=None, model_dir='models'):
+def save_models(lstm_model, xgb_model, num_scaler, meteo_scaler, label_scaler=None, scaler=None, model_dir='models'):
     os.makedirs(model_dir, exist_ok=True)
 
     # Сохраняем модели
     lstm_model.save(os.path.join(model_dir, 'lstm_model.keras'))
+    inputs = tf.keras.Input(shape=lstm_model.input_shape[1:])
+    x = lstm_model.layers[0](inputs)
+    x = lstm_model.layers[1](x)
+    x = lstm_model.layers[2](x)
+    x = lstm_model.layers[3](x)
+    x = lstm_model.layers[4](x)
+    x = lstm_model.layers[5](x)
+    feature_output = lstm_model.layers[6](x)
+    lstm_feature_extractor = tf.keras.Model(inputs=inputs, outputs=feature_output)
+    lstm_feature_extractor.save(os.path.join(model_dir, 'lstm_feature_extractor.keras'))
+
     xgb_model.save_model(os.path.join(model_dir, 'xgb_model.json'))
 
     # Сохраняем скейлеры
@@ -21,7 +27,7 @@ def save_models(lstm_model, xgb_model, num_scaler, meteo_scaler, label_scaler=No
         'num_scaler': num_scaler,
         'meteo_scaler': meteo_scaler,
         'label_scaler': label_scaler,
-        'sequence_scaler': sequence_scaler
+        'scaler': scaler
     }
     joblib.dump(scalers, os.path.join(model_dir, 'scalers.pkl'))
 
