@@ -20,6 +20,9 @@ def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
         'so_cglo': 'so',
         'zos_cglo': 'zos'
     })
+    #df.fillna(0, inplace=True)  # Изменяет исходный датафрейм
+    for column in df.select_dtypes(include=['float64', 'int64']).columns: 
+        df[column] = df[column].fillna(df[column].mean())
 
     # Преобразуем timestamp в datetime без временной зоны
     df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.tz_localize(None)
@@ -46,8 +49,6 @@ def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
     df["acceleration"] = df["speed_diff"].diff().fillna(0)
     df["bearing_change"] = df["course"].diff().fillna(0)
     df["moving"] = (df["speed"] > 0).astype(int)
-    for column in df.select_dtypes(include=['float64', 'int64']).columns:
-        df[column] = df[column].fillna(df[column].mean())
 
     # === ОБРАБОТКА ВЫБРОСОВ ===
     #df = df[df["speed"] < df["speed"].quantile(0.99)]
@@ -56,8 +57,7 @@ def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
     num_cols = ["speed", "course", "lat_diff", "lon_diff", "course_diff", "log_distance", "speed_diff", "acceleration", "bearing_change"]
     # === МЕТЕОПРИЗНАКИ ===
     meteo_cols = [col for col in df.columns if any(x in col for x in ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
-    feature_cols = ["lat", "lon"] + num_cols + ["moving"] + meteo_cols
-    apply_feature_scalers_from_saved(df, num_cols, meteo_cols)
+    df = apply_feature_scalers_from_saved(df, num_cols, meteo_cols)
 
     return df
 

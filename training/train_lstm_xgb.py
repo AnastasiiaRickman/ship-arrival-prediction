@@ -3,7 +3,7 @@ import tensorflow as tf
 from tensorflow import keras
 from keras import regularizers
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler
 from sklearn.metrics import mean_absolute_error
 import xgboost as xgb
 import joblib
@@ -17,6 +17,7 @@ from preprocessing.load_and_clean import load_and_prepare_data
 # === 1. Загрузка и подготовка данных ===
 import requests
 import os
+
 
 API_URL = "http://127.0.0.1:8000"
 LOCAL_DATA_DIR = "data"  # Эта папка будет заполнена загруженными CSV
@@ -66,7 +67,7 @@ X_scaler = MinMaxScaler()
 X_train = X_scaler.fit_transform(X_train.reshape(-1, X_train.shape[-1])).reshape(X_train.shape)
 X_test = X_scaler.transform(X_test.reshape(-1, X_test.shape[-1])).reshape(X_test.shape)
 joblib.dump(X_scaler, 'models/X_scaler.pkl')
-label_scaler = MinMaxScaler()
+label_scaler = StandardScaler()
 y_train = label_scaler.fit_transform(y_train.reshape(-1, 1)).flatten()
 y_test = label_scaler.transform(y_test.reshape(-1, 1)).flatten()
 joblib.dump(label_scaler, 'models/label_scaler.pkl')
@@ -74,30 +75,56 @@ joblib.dump(label_scaler, 'models/label_scaler.pkl')
 # === 6. LSTM модель ===
 
 lstm_model = tf.keras.Sequential([
-    tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences=True), input_shape=(X_train.shape[1], X_train.shape[2])),
-    tf.keras.layers.Dropout(0.3),
-    tf.keras.layers.LSTM(32, return_sequences=False),
+    tf.keras.Input(shape=(X_train.shape[1], X_train.shape[2])),  # 👈 теперь input здесь
+    tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(128, return_sequences=True)),
     tf.keras.layers.Dropout(0.2),
+    tf.keras.layers.LSTM(64, return_sequences=True),
+    tf.keras.layers.Dropout(0.2),
+    tf.keras.layers.LSTM(32),
+    tf.keras.layers.Dropout(0.1),
     tf.keras.layers.Dense(32, activation='relu'),
     tf.keras.layers.Dense(16, activation='relu'),
-    tf.keras.layers.Dense(8, activation='relu'),
     tf.keras.layers.Dense(1)
 ])
+lstm_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.00005), loss='mse')
+def build_lstm_model(input_shape):
+    lstm_model = tf.keras.Sequential([
+        tf.keras.Input(shape=input_shape),
 
-lstm_model.compile(optimizer='adam', loss='mse')
+        # LSTM слои (без bidirectional, как в лучшем эксперименте)
+        tf.keras.layers.LSTM(32, return_sequences=True),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.LSTM(16, return_sequences=True),
+        tf.keras.layers.Dropout(0.1),
+        tf.keras.layers.LSTM(8),
 
-early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=6, restore_best_weights=True)
+        # Полносвязные слои
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dense(32, activation='relu'),
+        tf.keras.layers.Dense(1)  # Финальный output
+    ])
 
+    lstm_model.compile(optimizer='adam', loss='mae')
+    return lstm_model
+
+callbacks = [
+    tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True),
+    tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-7)
+]
+# === 6. LSTM Feature Extractor ===
+
+# lstm_model = build_lstm_model(input_shape=(X_train.shape[1], X_train.shape[2]))
 print("🧠 Обучение LSTM...")
 lstm_model.fit(
     X_train, y_train,
     validation_data=(X_test, y_test),
     epochs=50,
-    batch_size=16,
-    callbacks=[early_stop]
+    batch_size=32,  # Можете попробовать уменьшить до 16
+    callbacks=callbacks,
+    verbose=1  # Для подробных логов
 )
 
-# === СОЗДАНИЕ FEATURE EXTRACTOR (на основе обученной модели) ===
+# Создаем Feature Extractor на основе обученной модели
 inputs = tf.keras.Input(shape=(X_train.shape[1], X_train.shape[2]))
 x = lstm_model.layers[0](inputs)  # Bidirectional LSTM
 x = lstm_model.layers[1](x)       # Dropout
@@ -107,25 +134,23 @@ x = lstm_model.layers[4](x)       # Dense(32)
 x = lstm_model.layers[5](x)       # Dense(16)
 feature_output = lstm_model.layers[6](x)  # Dense(8) — наш слой признаков
 
+# # СОЗДАНИЕ FEATURE EXTRACTOR (на основе обученной модели)
 feature_extractor = tf.keras.Model(inputs=inputs, outputs=feature_output)
 
 print("📐 Извлечение признаков...")
 X_train_features = feature_extractor.predict(X_train)
 X_test_features = feature_extractor.predict(X_test)
-# Проверяем форму извлеченных признаков
-print(X_train_features.shape)  # Например, (batch_size, seq_length, features)
-print(X_test_features.shape)
 
 #=== 8. XGBoost ===
 xgb_model = xgb.XGBRegressor(
-    max_depth=7,
-    learning_rate=0.18,
-    n_estimators=362,
-    subsample=0.9,
-    colsample_bytree=0.9,
-    gamma=0.008,
-    reg_alpha=0.23,
-    reg_lambda=0.37,
+    max_depth=10, 
+    learning_rate=0.18907365925970332,
+    n_estimators=362, 
+    subsample=0.9183945866232028, 
+    colsample_bytree=0.9069336171226844,
+    gamma=0.7367508381925425, 
+    reg_alpha=0.8747927173857223,
+    reg_lambda=0.3767252935537126,
     objective='reg:squarederror'
 )
 

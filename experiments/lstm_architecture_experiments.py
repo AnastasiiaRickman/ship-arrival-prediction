@@ -2,7 +2,7 @@ import os
 import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from preprocessing.load_and_clean import load_and_prepare_data
@@ -12,26 +12,28 @@ from training.sequence_builder import create_sequences
 
 def build_lstm_model(input_shape, hidden_units_1=64, hidden_units_2=32, dropout_1=0.3, dropout_2=0.2, use_bidirectional=True):
     model = tf.keras.Sequential()
+    model.add(tf.keras.Input(shape=input_shape))  # <-- Правильный способ задания входа
 
-    # Добавление первого слоя LSTM (Bidirectional)
     if use_bidirectional:
-        model.add(tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(hidden_units_1, return_sequences=True), input_shape=input_shape))
+        model.add(tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(hidden_units_1, return_sequences=True)))
     else:
-        model.add(tf.keras.layers.LSTM(hidden_units_1, return_sequences=True, input_shape=input_shape))
-    model.add(tf.keras.layers.Dropout(dropout_1))
+        model.add(tf.keras.layers.LSTM(hidden_units_1, return_sequences=True))
+    # model.add(tf.keras.layers.Dropout(dropout_1))
 
-    # Добавление второго слоя LSTM
-    model.add(tf.keras.layers.LSTM(hidden_units_2, return_sequences=False))
-    model.add(tf.keras.layers.Dropout(dropout_2))
+    # model.add(tf.keras.layers.LSTM(hidden_units_2, return_sequences=False))
+    # model.add(tf.keras.layers.Dropout(dropout_2))
 
-    # Полносвязные слои
+    # model.add(tf.keras.layers.Dense(32, activation='relu'))
+    # model.add(tf.keras.layers.Dense(16, activation='relu'))
+    # model.add(tf.keras.layers.Dense(8, activation='relu'))
+    # model.add(tf.keras.layers.Dense(1))
+    model.add(tf.keras.layers.LSTM(64))
     model.add(tf.keras.layers.Dense(32, activation='relu'))
-    model.add(tf.keras.layers.Dense(16, activation='relu'))
-    model.add(tf.keras.layers.Dense(8, activation='relu'))  # Этот слой для передачи в XGB
     model.add(tf.keras.layers.Dense(1))
 
-    model.compile(optimizer='adam', loss='mse')
+    model.compile(optimizer='adam', loss='mae')
     return model
+
 
 def run_experiment(config):
     print("🔄 Загрузка данных...")
@@ -41,13 +43,12 @@ def run_experiment(config):
     # Определение колонок
     num_cols = ["speed", "course", "lat_diff", "lon_diff", "course_diff", "log_distance", "speed_diff", "acceleration", "bearing_change"]
     meteo_cols = [col for col in df.columns if any(x in col for x in ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
-    feature_cols = ["lat", "lon"] + num_cols + ["moving"] + meteo_cols  # добавляем эту строку
-
     print(f"Размер данных: {df.shape}")
 
     print("🔄 Масштабирование и создание последовательностей...")
     # Масштабирование и создание последовательностей
-    _, _, _, num_cols, meteo_cols = fit_feature_scalers(df)
+    df, num_scaler, meteo_scaler = fit_feature_scalers(df, num_cols, meteo_cols)
+    feature_cols = ["lat", "lon"] + num_cols + ["moving"] + meteo_cols
     dataset, labels = create_sequences(df[feature_cols].values, df["ETA_diff"].values, seq_length=10)
 
     X_train, X_test, y_train, y_test = train_test_split(dataset, labels, test_size=0.2, random_state=42)
@@ -55,7 +56,7 @@ def run_experiment(config):
     X_train = X_scaler.fit_transform(X_train.reshape(-1, X_train.shape[-1])).reshape(X_train.shape)
     X_test = X_scaler.transform(X_test.reshape(-1, X_test.shape[-1])).reshape(X_test.shape)
 
-    label_scaler = MinMaxScaler()
+    label_scaler = StandardScaler()
     y_train = label_scaler.fit_transform(y_train.reshape(-1, 1)).flatten()
     y_test = label_scaler.transform(y_test.reshape(-1, 1)).flatten()
 
