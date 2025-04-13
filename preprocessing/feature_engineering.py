@@ -49,26 +49,7 @@ def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
     lambda row: haversine(row["lat"], row["lon"], row["lat_destination"], row["lon_destination"]), axis=1)
     df["log_distance"] = np.log1p(df["distance_to_destination"])  # Логарифмирование
 
-    # ETA на основе средней скорости
-    avg_speed_kmh = df["speed"].mean() if df["speed"].mean() > 1 else 15
-    avg_speed_mps = avg_speed_kmh / 3.6
-
-    # df["ETA_seconds"] = df["distance_to_destination"] * 1000 / avg_speed_mps
-    # df["timestamp_destination"] = df["timestamp"] + pd.to_timedelta(df["ETA_seconds"], unit="s")
-    # df["timestamp_destination_unix"] = df["timestamp_destination"].astype("int64") // 10**9
-    # df["ETA_diff"] = df["timestamp_destination_unix"] - df["timestamp_unix"]
-    # Финальный ETA_diff
     df["ETA_diff"] = df["timestamp_destination_unix"] - df["timestamp_unix"]
-
-    # Добавляем шум в ETA_diff, если есть дубликаты
-    # duplicate_etas = df["ETA_diff"].duplicated(keep=False)
-    # noise = np.random.normal(0, 30, size=duplicate_etas.sum())  # ±30 секунд
-    # df.loc[duplicate_etas, "ETA_diff"] += noise
-
-    # Пересчитываем timestamp_destination с шумом
-    # df["timestamp_destination"] = df["timestamp"] + pd.to_timedelta(df["ETA_diff"], unit="s")
-    # df["timestamp_destination_unix"] = df["timestamp_destination"].astype(np.int64) // 10**9
-
 
     # Доп. признаки
     df["speed_diff"] = df["speed"].diff().fillna(0)
