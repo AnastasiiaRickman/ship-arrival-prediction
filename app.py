@@ -1,6 +1,11 @@
 import streamlit as st
 import pandas as pd
 from preprocessing.predict_helpers import preprocess_input_data, predict_eta_from_new_data
+def debug_df(df, label="DataFrame"):
+    st.subheader(f"🔍 Debug — {label}")
+    st.write("Shape:", df.shape)
+    st.text(f"✔️ Колонки df_processed:\n{df.columns.tolist()}")
+    st.dataframe(df.head())
 
 # Заголовок и описание
 st.title('⛵ Предсказание ETA для судов')
@@ -22,7 +27,9 @@ if uploaded_file is not None:
 
     # Предсказание ETA
     try:
+        debug_df(df_raw, "Исходный DF")
         df_processed = preprocess_input_data(df_raw)
+        debug_df(df_processed, "DF после препроцессинга")
         result = predict_eta_from_new_data(df_processed)
 
         st.subheader('📊 Результаты предсказания:')
@@ -31,3 +38,4 @@ if uploaded_file is not None:
         st.write(f"🕓 Последнее время в треке: {result['base_time']}")
     except ValueError as e:
         st.error(f"❌ Ошибка при предсказании: {e}")
+        st.write("Columns:", list(df_processed.columns))

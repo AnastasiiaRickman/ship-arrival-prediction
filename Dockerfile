@@ -1,5 +1,5 @@
 # Используем официальный образ Python с меньшим весом
-FROM python:3.10-slim
+FROM python:3.12-slim
 
 # Устанавливаем зависимости ОС
 RUN apt-get update && apt-get install -y \

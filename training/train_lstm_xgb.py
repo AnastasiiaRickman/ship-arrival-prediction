@@ -170,6 +170,7 @@ feature_extractor.save("models/lstm_feature_extractor.keras")
 xgb_model.save_model("models/xgb_model.json")
 
 print("✅ Всё готово!")
+print("Feature columns из модели:", feature_cols)
 print("💾 Сохраняем извлечённые данные для экспериментов...")
 
 os.makedirs("artifacts", exist_ok=True)
