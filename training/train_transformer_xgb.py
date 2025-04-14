@@ -12,40 +12,6 @@ from preprocessing.load_and_clean import load_and_prepare_data
 
 df = load_and_prepare_data(LOCAL_DATA_DIR)
 
-# === ВИЗУАЛИЗАЦИЯ ETA_diff (добавлено здесь) ===
-print("=== Статистика ETA_diff ===")
-print("Мин. (сек):", df["ETA_diff"].min())
-print("Макс. (сек):", df["ETA_diff"].max())
-print("Среднее (мин):", df["ETA_diff"].mean() / 60)
-print("Медиана (мин):", df["ETA_diff"].median() / 60)
-print("90-й перцентиль (мин):", df["ETA_diff"].quantile(0.9) / 60)
-print("95-й перцентиль (мин):", df["ETA_diff"].quantile(0.95) / 60)
-
-plt.figure(figsize=(10, 4))
-plt.hist(df["ETA_diff"], bins=100, color='skyblue', edgecolor='black')
-plt.title("ETA_diff (в секундах)")
-plt.xlabel("Секунды")
-plt.ylabel("Количество")
-plt.grid(True)
-plt.show()
-
-plt.figure(figsize=(10, 4))
-plt.hist(df["ETA_diff"] / 60, bins=100, color='lightgreen', edgecolor='black')
-plt.title("ETA_diff (в минутах)")
-plt.xlabel("Минуты")
-plt.ylabel("Количество")
-plt.grid(True)
-plt.show()
-
-plt.figure(figsize=(10, 4))
-plt.hist(df["ETA_diff"] / 3600, bins=100, color='salmon', edgecolor='black')
-plt.title("ETA_diff (в часах)")
-plt.xlabel("Часы")
-plt.ylabel("Количество")
-plt.grid(True)
-plt.show()
-# === конец вставки ===
-
 # === 2. Масштабирование ===
 num_cols = ["speed", "course", "lat_diff", "lon_diff", "course_diff",
             "log_distance", "speed_diff", "acceleration", "bearing_change"]
@@ -112,10 +78,8 @@ def build_stronger_transformer(input_shape,
     output = layers.Dense(1)(x)
     model = models.Model(inputs, output)
     return model
-
 early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
-
-print("🧠 Обучение Transformer...")
+print("Обучение Transformer...")
 model = build_stronger_transformer(input_shape=(X_train.shape[1], X_train.shape[2]))
 model.compile(optimizer='adam', loss='mse', metrics=['mae'])
 model.fit(

@@ -8,13 +8,11 @@ import seaborn as sns
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 # === 1. Подготовка признаков ===
-# Эти переменные предполагается, что уже были рассчитаны ранее
 X_train_features = np.load("artifacts/X_train_features.npy")
 X_test_features = np.load("artifacts/X_test_features.npy")
 y_train = np.load("artifacts/y_train.npy")
 y_test = np.load("artifacts/y_test.npy")
 label_scaler = joblib.load("artifacts/label_scaler.pkl")
-
 
 # === 2. Целевая функция для Optuna ===
 def objective(trial):
@@ -38,7 +36,7 @@ def objective(trial):
 study = optuna.create_study(direction="minimize")
 study.optimize(objective, n_trials=25)
 
-print("\n🎯 Лучшие параметры:")
+print("\nЛучшие параметры:")
 print(study.best_params)
 
 # === 4. Финальная модель ===

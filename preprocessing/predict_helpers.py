@@ -8,7 +8,6 @@ from api.get_meteo import get_meteo_data
 def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
     #df = get_meteo_data(df)
     #df = df.drop(columns=['depth', 'latitude', 'longitude', 'time', 'index'])
-    print("==> Исходные колонки:", df.columns)
     df = df.rename(columns={
         'mlotst_cglo': 'mlotst',
         'siconc_cglo': 'siconc',
@@ -32,7 +31,6 @@ def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
     df["dayofweek"] = df["timestamp"].dt.dayofweek
     df["month"] = df["timestamp"].dt.month
     #df["season"] = df["month"].map(lambda x: (x % 12 + 3) // 3)
-    print("==> После добавления season:", df.columns)
 
     #  === ГЕОГРАФИЧЕСКИЕ ПРИЗНАКИ ===
     def haversine(lat1, lon1, lat2, lon2):
@@ -59,8 +57,6 @@ def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
     # === МЕТЕОПРИЗНАКИ ===
     meteo_cols = [col for col in df.columns if any(x in col for x in ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
     df = apply_feature_scalers_from_saved(df, num_cols, meteo_cols)
-    print("==> После масштабирования:", df.columns)
-
     return df
 
 import os
@@ -86,9 +82,8 @@ def predict_eta_from_new_data(df_new, seq_length=10, model_dir='models'):
         raise ValueError("В DataFrame отсутствует колонка 'timestamp'.")
 
     # Загружаем feature_cols
-    #feature_cols = joblib.load("models/feature_cols.pkl")
-    #print("==> Feature columns из модели:", feature_cols)
-    feature_cols = ['lat', 'lon', 'speed', 'course', 'lat_diff', 'lon_diff', 'course_diff', 'log_distance', 'speed_diff', 'acceleration', 'bearing_change', 'moving', 'mlotst', 'siconc', 'sithick', 'so', 'thetao', 'uo', 'vo', 'zos']
+    feature_cols = joblib.load("models/feature_cols.pkl")
+    #feature_cols = ['lat', 'lon', 'speed', 'course', 'lat_diff', 'lon_diff', 'course_diff', 'log_distance', 'speed_diff', 'acceleration', 'bearing_change', 'moving', 'mlotst', 'siconc', 'sithick', 'so', 'thetao', 'uo', 'vo', 'zos']
     # Загружаем скейлеры
     scaler = joblib.load("models/X_scaler.pkl")
     label_scaler = joblib.load("models/label_scaler.pkl")
@@ -103,14 +98,7 @@ def predict_eta_from_new_data(df_new, seq_length=10, model_dir='models'):
     df_sorted = df_new.sort_values(by="timestamp")
 
     # Последние seq_length строк
-    import streamlit as st
-    print("🧠 df_sorted columns:", df_sorted.columns.tolist())
-    st.text(f"🧠 df_sorted columns:\n{df_sorted.columns.tolist()}")
-    print("📌 feature_cols from model:", feature_cols)
-    st.text(f"📌 feature_cols from model:\n{feature_cols}")
-
     seq_df = df_sorted[feature_cols].tail(seq_length)
-    print("==> Колонки перед моделью:", seq_df.columns)
 
     if len(seq_df) < seq_length:
         raise ValueError(f"Недостаточно данных: нужно минимум {seq_length}, а получено {len(seq_df)}")

@@ -23,22 +23,22 @@ LOCAL_DATA_DIR = "data"  # Эта папка будет заполнена за�
 
 os.makedirs(LOCAL_DATA_DIR, exist_ok=True)
 
-# # Получаем список файлов с API
-# response = requests.get(f"{API_URL}/files")
-# csv_files = response.json()
+# Получаем список файлов с API
+response = requests.get(f"{API_URL}/files")
+csv_files = response.json()
 
-# # Скачиваем каждый CSV
-# for filename in csv_files:
-#     file_url = f"{API_URL}/files/{filename}"
-#     file_path = os.path.join(LOCAL_DATA_DIR, filename)
+# Скачиваем каждый CSV
+for filename in csv_files:
+    file_url = f"{API_URL}/files/{filename}"
+    file_path = os.path.join(LOCAL_DATA_DIR, filename)
 
-#     r = requests.get(file_url)
-#     if r.status_code == 200:
-#         with open(file_path, 'wb') as f:
-#             f.write(r.content)
-#         print(f"✅ Файл {filename} загружен.")
-#     else:
-#         print(f"❌ Ошибка при загрузке {filename}")
+    r = requests.get(file_url)
+    if r.status_code == 200:
+        with open(file_path, 'wb') as f:
+            f.write(r.content)
+        print(f"✅ Файл {filename} загружен.")
+    else:
+        print(f"❌ Ошибка при загрузке {filename}")
 
 # После загрузки можно передать в пайплайн
 from preprocessing.load_and_clean import load_and_prepare_data
@@ -153,7 +153,7 @@ xgb_model = xgb.XGBRegressor(
     objective='reg:squarederror'
 )
 
-print("🚀 Обучение XGBoost...")
+print("Обучение XGBoost...")
 xgb_model.fit(X_train_features, y_train)
 
 y_pred = xgb_model.predict(X_test_features)

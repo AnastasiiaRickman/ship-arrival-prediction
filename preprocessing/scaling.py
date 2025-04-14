@@ -3,20 +3,7 @@ import joblib
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 def fit_feature_scalers(df: pd.DataFrame, num_cols: list, meteo_cols: list, save_path: str = "models"):
-    """
-    Обучает и сохраняет два MinMaxScaler-а: для числовых и метео-признаков.
 
-    Аргументы:
-        df (pd.DataFrame): исходные данные
-        num_cols (list): список числовых признаков
-        meteo_cols (list): список метео-признаков
-        save_path (str): директория для сохранения скейлеров
-
-    Возвращает:
-        df_scaled (pd.DataFrame): копия df с нормализованными признаками
-        num_scaler (MinMaxScaler): скейлер для num_cols
-        meteo_scaler (MinMaxScaler): скейлер для meteo_cols
-    """
     os.makedirs(save_path, exist_ok=True)
     df_scaled = df.copy()
     num_scaler = MinMaxScaler()
@@ -39,18 +26,6 @@ import joblib
 import os
 
 def apply_feature_scalers_from_saved(df: pd.DataFrame, num_cols: list, meteo_cols: list, model_dir='models') -> pd.DataFrame:
-    """
-    Применяет ранее обученные скейлеры из сохранённых файлов к новому DataFrame.
-
-    Аргументы:
-        df (pd.DataFrame): новые данные
-        num_cols (list): числовые признаки
-        meteo_cols (list): метео-признаки
-        model_dir (str): путь к папке, где хранятся скейлеры (по умолчанию 'models')
-
-    Возвращает:
-        pd.DataFrame: нормализованная копия входного DataFrame
-    """
     df_scaled = df.copy()
 
     # Загружаем скейлеры из отдельных файлов
