@@ -1,38 +1,53 @@
+import os
+import joblib
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
+def fit_feature_scalers(df: pd.DataFrame, num_cols: list, meteo_cols: list, save_path: str = "models"):
+
+    os.makedirs(save_path, exist_ok=True)
+    df_scaled = df.copy()
+    num_scaler = MinMaxScaler()
+    meteo_scaler = MinMaxScaler()
+
+    df_scaled[num_cols] = num_scaler.fit_transform(df_scaled[num_cols])
+    df_scaled[meteo_cols] = meteo_scaler.fit_transform(df_scaled[meteo_cols])
+
+    joblib.dump(num_scaler, os.path.join(save_path, "num_scaler.pkl"))
+    joblib.dump(meteo_scaler, os.path.join(save_path, "meteo_scaler.pkl"))
+
+    print("✅ Скейлеры обучены, применены к данным и сохранены")
+
+    return df_scaled, num_scaler, meteo_scaler
+
 import joblib
 import os
 
-def fit_feature_scalers(df: pd.DataFrame, save_path: str = "models"):
-    """
-    Фит и сохранение скейлеров для числовых и метео-признаков.
-    """
+import joblib
+import os
 
-    os.makedirs(save_path, exist_ok=True)
+def apply_feature_scalers_from_saved(df: pd.DataFrame, num_cols: list, meteo_cols: list, model_dir='models') -> pd.DataFrame:
+    df_scaled = df.copy()
 
-    # Признаки
-    num_cols = ["speed", "course", "lat_diff", "lon_diff", "course_diff",
-                "log_distance", "speed_diff", "acceleration", "bearing_change"]
-    meteo_cols = [col for col in df.columns if any(x in col for x in
-                    ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
-    feature_cols = ["lat", "lon"] + num_cols + ["moving"] + meteo_cols
+    # Загружаем скейлеры из отдельных файлов
+    try:
+        num_scaler = joblib.load(os.path.join(model_dir, 'num_scaler.pkl'))
+        meteo_scaler = joblib.load(os.path.join(model_dir, 'meteo_scaler.pkl'))
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Не удалось найти файлы с скейлерами в директории {model_dir}.")
 
-    # Скейлеры
-    num_scaler = MinMaxScaler()
-    meteo_scaler = MinMaxScaler()
-    seq_scaler = MinMaxScaler()
+    if not num_cols:
+        raise ValueError("num_cols список пуст.")
+    if not meteo_cols:
+        raise ValueError("meteo_cols список пуст.")
 
-    # Фит
-    num_scaler.fit(df[num_cols])
-    meteo_scaler.fit(df[meteo_cols])
-    seq_scaler.fit(df[feature_cols])
+    missing_num_cols = [col for col in num_cols if col not in df.columns]
+    missing_meteo_cols = [col for col in meteo_cols if col not in df.columns]
 
-    # Сохраняем
-    joblib.dump(num_scaler, os.path.join(save_path, "num_scaler.pkl"))
-    joblib.dump(meteo_scaler, os.path.join(save_path, "meteo_scaler.pkl"))
-    joblib.dump(seq_scaler, os.path.join(save_path, "sequence_scaler.pkl"))
+    if missing_num_cols or missing_meteo_cols:
+        raise ValueError(f"Отсутствуют колонки: {missing_num_cols + missing_meteo_cols}")
 
-    print("✅ Скейлеры обучены и сохранены")
+    # Применяем скейлеры
+    df_scaled[num_cols] = num_scaler.transform(df[num_cols])
+    df_scaled[meteo_cols] = meteo_scaler.transform(df[meteo_cols])
 
-    return num_scaler, meteo_scaler, seq_scaler, num_cols, meteo_cols
-
+    return df_scaled
