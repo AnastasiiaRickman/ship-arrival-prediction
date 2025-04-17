@@ -44,8 +44,6 @@ def plot_training_history(history):
     plt.savefig('artifacts/training_history.png')  # Сохраняем график
     plt.show()
 
-
-
 # API_URL = "http://127.0.0.1:8000"
 LOCAL_DATA_DIR = "data"  # Эта папка будет заполнена загруженными CSV
 

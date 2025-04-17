@@ -3,10 +3,36 @@ import requests
 import os
 import matplotlib.pyplot as plt  # 🔥 Добавлено для графиков
 
-API_URL = "http://127.0.0.1:8000"
+# API_URL = "http://127.0.0.1:8000"
 LOCAL_DATA_DIR = "data"  # Эта папка будет заполнена загруженными CSV
 
 os.makedirs(LOCAL_DATA_DIR, exist_ok=True)
+import matplotlib.pyplot as plt
+def plot_transformer_training(history, model_name="Transformer"):
+    """Визуализация процесса обучения Transformer"""
+    plt.figure(figsize=(15, 6))
+    
+    # График потерь
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history['loss'], label='Train Loss')
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.title(f'{model_name} Loss over Epochs')
+    plt.xlabel('Epoch')
+    plt.ylabel('MSE Loss')
+    plt.legend()
+    
+    # График MAE
+    plt.subplot(1, 2, 2)
+    plt.plot(history.history['mae'], label='Train MAE')
+    plt.plot(history.history['val_mae'], label='Validation MAE')
+    plt.title(f'{model_name} MAE over Epochs')
+    plt.xlabel('Epoch')
+    plt.ylabel('MAE')
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.savefig(f'artifacts/{model_name.lower()}_training_history.png')
+    plt.show()
 
 from preprocessing.load_and_clean import load_and_prepare_data
 
@@ -22,9 +48,14 @@ from preprocessing.scaling import fit_feature_scalers
 df, num_scaler, meteo_scaler = fit_feature_scalers(df, num_cols, meteo_cols)
 
 # === 3. Построение последовательностей ===
-feature_cols = ["lat", "lon"] + num_cols + ["moving"] + meteo_cols
-import joblib
-joblib.dump(feature_cols, 'models/feature_cols.pkl')
+baseline = ["speed", "lat", "lon", "distance_to_destination"]
+geo = ["lat_diff", "lon_diff", "course_diff", "log_distance"]
+temporal = ["hour", "dayofweek", "month", "season"]
+dynamic = ["speed_diff", "acceleration", "bearing_change", "moving"]
+meteo = [col for col in df.columns if any(x in col for x in ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
+synthetic = ["log_distance"]
+
+feature_cols = baseline + geo + temporal + dynamic + synthetic
 
 from training.sequence_builder import create_sequences
 dataset, labels = create_sequences(df[feature_cols].values, df["ETA_diff"].values, seq_length=10)
@@ -38,12 +69,10 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler
 X_scaler = MinMaxScaler()
 X_train = X_scaler.fit_transform(X_train.reshape(-1, X_train.shape[-1])).reshape(X_train.shape)
 X_test = X_scaler.transform(X_test.reshape(-1, X_test.shape[-1])).reshape(X_test.shape)
-joblib.dump(X_scaler, 'models/X_scaler.pkl')
 
 label_scaler = RobustScaler()
 y_train = label_scaler.fit_transform(y_train.reshape(-1, 1)).flatten()
 y_test = label_scaler.transform(y_test.reshape(-1, 1)).flatten()
-joblib.dump(label_scaler, 'models/label_scaler.pkl')
 
 # === 6. Модель ===
 from keras import regularizers, layers, models
@@ -81,14 +110,15 @@ def build_stronger_transformer(input_shape,
 early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
 print("Обучение Transformer...")
 model = build_stronger_transformer(input_shape=(X_train.shape[1], X_train.shape[2]))
+
 model.compile(optimizer='adam', loss='mse', metrics=['mae'])
-model.fit(
+history = model.fit(
     X_train, y_train,
     validation_data=(X_test, y_test),
-    epochs=100,
-    batch_size=32,
-    callbacks=[early_stop]
+    epochs=50,
+    batch_size=32
 )
+plot_transformer_training(history, "Stronger Transformer")
 
 # Предсказания:
 from sklearn.metrics import mean_absolute_error
