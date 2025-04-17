@@ -30,7 +30,7 @@ def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
     df["hour"] = df["timestamp"].dt.hour
     df["dayofweek"] = df["timestamp"].dt.dayofweek
     df["month"] = df["timestamp"].dt.month
-    #df["season"] = df["month"].map(lambda x: (x % 12 + 3) // 3)
+    df["season"] = df["month"].map(lambda x: (x % 12 + 3) // 3)
 
     #  === ГЕОГРАФИЧЕСКИЕ ПРИЗНАКИ ===
     def haversine(lat1, lon1, lat2, lon2):

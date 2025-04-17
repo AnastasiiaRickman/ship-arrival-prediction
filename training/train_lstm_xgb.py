@@ -105,46 +105,45 @@ joblib.dump(label_scaler, 'models/label_scaler.pkl')
 
 # === 6. LSTM модель ===
 
-# lstm_model = tf.keras.Sequential([
-#     tf.keras.Input(shape=(X_train.shape[1], X_train.shape[2])),  # 👈 теперь input здесь
-#     tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(128, return_sequences=True)),
-#     tf.keras.layers.Dropout(0.2),
-#     tf.keras.layers.LSTM(64, return_sequences=True),
-#     tf.keras.layers.Dropout(0.2),
-#     tf.keras.layers.LSTM(32),
-#     tf.keras.layers.Dropout(0.1),
-#     tf.keras.layers.Dense(32, activation='relu'),
-#     tf.keras.layers.Dense(16, activation='relu'),
-#     tf.keras.layers.Dense(1)
-# ])
 lstm_model = tf.keras.Sequential([
     tf.keras.Input(shape=(X_train.shape[1], X_train.shape[2])),  # 👈 теперь input здесь
-    tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences=True)),
-    tf.keras.layers.Dropout(0.3),
-    tf.keras.layers.LSTM(32, return_sequences=False),
+    tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(128, return_sequences=True)),
     tf.keras.layers.Dropout(0.2),
+    tf.keras.layers.LSTM(64, return_sequences=True),
+    tf.keras.layers.Dropout(0.2),
+    tf.keras.layers.LSTM(32),
+    tf.keras.layers.Dropout(0.1),
     tf.keras.layers.Dense(32, activation='relu'),
     tf.keras.layers.Dense(16, activation='relu'),
-    tf.keras.layers.Dense(8, activation='relu'),
-    tf.keras.layers.Dense(1)  # Feature слой
+    tf.keras.layers.Dense(1)
 ])
+# lstm_model = tf.keras.Sequential([
+#     tf.keras.Input(shape=(X_train.shape[1], X_train.shape[2])),  # 👈 теперь input здесь
+#     tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences=True)),
+#     tf.keras.layers.Dropout(0.3),
+#     tf.keras.layers.LSTM(32, return_sequences=False),
+#     tf.keras.layers.Dropout(0.2),
+#     tf.keras.layers.Dense(32, activation='relu'),
+#     tf.keras.layers.Dense(16, activation='relu'),
+#     tf.keras.layers.Dense(8, activation='relu'),
+#     tf.keras.layers.Dense(1)  # Feature слой
+# ])
 
 lstm_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.00005), loss='mse')
 
-# callbacks = [
-#     tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True),
-#     tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-7)
-# ]
+callbacks = [
+    tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True),
+    tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-7)
+]
 # === 6. LSTM Feature Extractor ===
 
-# lstm_model = build_lstm_model(input_shape=(X_train.shape[1], X_train.shape[2]))
 print("🧠 Обучение LSTM...")
 history = lstm_model.fit(
     X_train, y_train,
     validation_data=(X_test, y_test),
     epochs=50,
     batch_size=32,  # Можете попробовать уменьшить до 16
-    # callbacks=callbacks,
+    callbacks=callbacks,
     verbose=1  # Для подробных логов
 )
 
@@ -168,29 +167,29 @@ print("📐 Извлечение признаков...")
 X_train_features = feature_extractor.predict(X_train)
 X_test_features = feature_extractor.predict(X_test)
 
-#=== 8. XGBoost ===
-# xgb_model = xgb.XGBRegressor(
-#     max_depth=10, 
-#     learning_rate=0.18907365925970332,
-#     n_estimators=362, 
-#     subsample=0.9183945866232028, 
-#     colsample_bytree=0.9069336171226844,
-#     gamma=0.7367508381925425, 
-#     reg_alpha=0.8747927173857223,
-#     reg_lambda=0.3767252935537126,
-#     objective='reg:squarederror'
-# )
-
+# === 8. XGBoost ===
 xgb_model = xgb.XGBRegressor(
-    max_depth=6,
-    learning_rate=0.05,
-    n_estimators=500,
-    subsample=0.8,
-    colsample_bytree=0.8,
-    gamma=1,
-    reg_alpha=0.3,
-    reg_lambda=1.0
+    max_depth=9, 
+    learning_rate=0.06836538089683836,
+    n_estimators=575, 
+    subsample=0.594983861926637, 
+    colsample_bytree=0.5000096450822888,
+    gamma=0.010825397996025832, 
+    reg_alpha=0.6599784561094663,
+    reg_lambda=0.1936889676678525,
+    objective='reg:squarederror'
 )
+
+# xgb_model = xgb.XGBRegressor(
+#     max_depth=6,
+#     learning_rate=0.05,
+#     n_estimators=500,
+#     subsample=0.8,
+#     colsample_bytree=0.8,
+#     gamma=1,
+#     reg_alpha=0.3,
+#     reg_lambda=1.0
+# )
 
 print("Обучение XGBoost...")
 xgb_model.fit(X_train_features, y_train)
@@ -216,7 +215,6 @@ feature_extractor.save("models/lstm_feature_extractor.keras")
 xgb_model.save_model("models/xgb_model.json")
 
 print("✅ Всё готово!")
-print("Feature columns из модели:", feature_cols)
 print("💾 Сохраняем извлечённые данные для экспериментов...")
 
 os.makedirs("artifacts", exist_ok=True)
