@@ -31,14 +31,36 @@ docker run -p 8501:8501 ship-arrival-app
 
 ## 📁 Структура проекта
 
-```
-.
-├── app.py               # Streamlit-приложение для предсказания
-├── training/            # ML-модели и скрипты обучения
-├── Dockerfile           # Описание docker-образа
-├── requirements.txt     # Зависимости проекта
-└── README.md            # Документация
-```
+├── app.py                     # Streamlit-приложение для предсказания ETA
+├── Dockerfile                 # Docker-образ для развертывания
+├── requirements.txt           # Зависимости проекта
+│
+├── api/                       # Работа с внешними данными
+│   ├── data_provider.py
+│   └── get_meteo.py
+│
+├── artifacts/                 # Папка для артефактов (может использоваться для сохранения моделей, логов и пр. для экспериментов)
+│
+├── data/                      # Данные проекта (содержит данные для обучения модели. Может быть пустой и заполняться через data_provider.py)
+│
+├── experiments/              # Скрипты экспериментов и обучения моделей
+│   ├── lstm_architecture_experiments.py
+│   └── train_xgb_with_optuna.py
+│
+├── models/                    # Обученные модели и связанные артефакты
+│   ├── final_xgb_model.pkl
+│   ├── lstm_feature_extractor.keras
+│   ├── xgb_model.json
+│   ├── *.pkl                  # Скалеры, метаданные и др.
+│
+├── preprocessing/            # Обработка и подготовка данных
+│   ├── feature_engineering.py
+│   ├── load_and_clean.py
+│   ├── predict_helpers.py
+│   └── scaling.py
+│
+└── training/                  # Дополнительные вспомогательные модули/настройки обучения
+
 
 ## 🛠 Используемые технологии
 
