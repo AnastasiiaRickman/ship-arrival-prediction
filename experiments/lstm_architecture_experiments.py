@@ -92,14 +92,14 @@ if __name__ == "__main__":
     df = load_and_prepare_data("data")
     num_cols = ["speed", "course", "lat_diff", "lon_diff", "course_diff", 
                "log_distance", "speed_diff", "acceleration", "bearing_change"]
-    meteo_cols = [col for col in df.columns if any(x in col for x in ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
+    #meteo_cols = [col for col in df.columns if any(x in col for x in ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
     
-    df, num_scaler, meteo_scaler = fit_feature_scalers(df, num_cols, meteo_cols)
+    df, num_scaler = fit_feature_scalers(df, num_cols)
     baseline = ["speed", "lat", "lon", "distance_to_destination"]
     geo = ["lat_diff", "lon_diff", "course_diff", "log_distance"]
     temporal = ["hour", "dayofweek", "month", "season"]
     dynamic = ["speed_diff", "acceleration", "bearing_change", "moving"]
-    meteo = [col for col in df.columns if any(x in col for x in ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
+    #meteo = [col for col in df.columns if any(x in col for x in ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
     synthetic = ["log_distance"]
 
     feature_cols = baseline + geo + temporal + dynamic + synthetic
@@ -109,8 +109,8 @@ if __name__ == "__main__":
     X_scaler = MinMaxScaler()
     X_train = X_scaler.fit_transform(X_train.reshape(-1, X_train.shape[-1])).reshape(X_train.shape)
     X_test = X_scaler.transform(X_test.reshape(-1, X_test.shape[-1])).reshape(X_test.shape)
-    
-    label_scaler = StandardScaler()
+    from sklearn.preprocessing import RobustScaler
+    label_scaler = RobustScaler(quantile_range=(10, 90))
     y_train = label_scaler.fit_transform(y_train.reshape(-1, 1)).flatten()
     y_test = label_scaler.transform(y_test.reshape(-1, 1)).flatten()
 

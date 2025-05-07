@@ -74,9 +74,10 @@ df = load_and_prepare_data(LOCAL_DATA_DIR)
 num_cols = ["speed", "course", "lat_diff", "lon_diff", "course_diff",
             "log_distance", "speed_diff", "acceleration", "bearing_change"]
 
-meteo_cols = [col for col in df.columns if any(x in col for x in ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
+#meteo_cols = [col for col in df.columns if any(x in col for x in ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
 
-df, num_scaler, meteo_scaler = fit_feature_scalers(df, num_cols, meteo_cols)
+#df, num_scaler, meteo_scaler = fit_feature_scalers(df, num_cols, meteo_cols)
+df, num_scaler = fit_feature_scalers(df, num_cols)
 
 # === 3. Построение последовательностей ===
 baseline = ["speed", "lat", "lon", "distance_to_destination"]
@@ -90,11 +91,51 @@ feature_cols = baseline + geo + temporal + dynamic + synthetic
 joblib.dump(feature_cols, 'models/feature_cols.pkl')
 dataset, labels = create_sequences(df[feature_cols].values, df["ETA_diff"].values, seq_length=10)
 
+# def create_dynamic_sequences(df, min_length=5, max_length=30):
+#     sequences = []
+#     labels = []
+    
+#     # Группируем по уникальным точкам назначения и времени прибытия
+#     grouped = df.groupby(['timestamp_destination', 'seg_id']) 
+    
+#     for (dest_time, seg_id), group in grouped:
+#         # Сортируем по времени наблюдения
+#         group = group.sort_values('timestamp')
+        
+#         # Определяем длину последовательности динамически
+#         seq_length = min(max_length, 
+#                         max(min_length, 
+#                             len(group) // 2))  # Пример: половина доступных точек
+        
+#         # Создаем последовательности
+#         for i in range(len(group) - seq_length):
+#             seq = group.iloc[i:i+seq_length][feature_cols].values
+#             label = group.iloc[i+seq_length]['ETA_diff']
+#             sequences.append(seq)
+#             labels.append(label)
+    
+#     return sequences, np.array(labels)
+# dataset, labels = create_dynamic_sequences(df)
+
 # === 4. Делим данные ===
+# from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+# # padding='post' -> добивать нулями в конец, dtype='float32' — как ожидает LSTM
+# padded_dataset = pad_sequences(dataset, padding='post', dtype='float32')
+
 X_train, X_test, y_train, y_test = train_test_split(dataset, labels, test_size=0.2, random_state=42)
+# X_train, X_test, y_train, y_test = train_test_split(
+#     padded_dataset,
+#     np.array(labels),
+#     test_size=0.2,
+#     random_state=42
+# )
+
 
 # === 5. Нормализация ===
-X_scaler = MinMaxScaler()
+
+from sklearn.preprocessing import RobustScaler
+X_scaler = RobustScaler(quantile_range=(10, 90))
 X_train = X_scaler.fit_transform(X_train.reshape(-1, X_train.shape[-1])).reshape(X_train.shape)
 X_test = X_scaler.transform(X_test.reshape(-1, X_test.shape[-1])).reshape(X_test.shape)
 joblib.dump(X_scaler, 'models/X_scaler.pkl')
@@ -105,78 +146,171 @@ joblib.dump(label_scaler, 'models/label_scaler.pkl')
 
 # === 6. LSTM модель ===
 
-lstm_model = tf.keras.Sequential([
-    tf.keras.Input(shape=(X_train.shape[1], X_train.shape[2])),  # 👈 теперь input здесь
-    tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(128, return_sequences=True)),
-    tf.keras.layers.Dropout(0.2),
-    tf.keras.layers.LSTM(64, return_sequences=True),
-    tf.keras.layers.Dropout(0.2),
-    tf.keras.layers.LSTM(32),
-    tf.keras.layers.Dropout(0.1),
-    tf.keras.layers.Dense(32, activation='relu'),
-    tf.keras.layers.Dense(16, activation='relu'),
-    tf.keras.layers.Dense(1)
-])
 # lstm_model = tf.keras.Sequential([
 #     tf.keras.Input(shape=(X_train.shape[1], X_train.shape[2])),  # 👈 теперь input здесь
-#     tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences=True)),
-#     tf.keras.layers.Dropout(0.3),
-#     tf.keras.layers.LSTM(32, return_sequences=False),
+#     tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(128, return_sequences=True)),
 #     tf.keras.layers.Dropout(0.2),
+#     tf.keras.layers.LSTM(64, return_sequences=True),
+#     tf.keras.layers.Dropout(0.2),
+#     tf.keras.layers.LSTM(32),
+#     tf.keras.layers.Dropout(0.1),
 #     tf.keras.layers.Dense(32, activation='relu'),
 #     tf.keras.layers.Dense(16, activation='relu'),
-#     tf.keras.layers.Dense(8, activation='relu'),
-#     tf.keras.layers.Dense(1)  # Feature слой
+#     tf.keras.layers.Dense(1)
 # ])
 
-lstm_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.00005), loss='mse')
+
+from tensorflow.keras import layers, regularizers
+
+def build_feature_lstm_model(input_shape, num_heads=4, key_dim=64, dropout_rate=0.25):
+    inputs = layers.Input(shape=input_shape)
+    
+    # Входная проекция
+    x = layers.Dense(64, activation='swish')(inputs)
+    
+    # Первый BiLSTM + Residual
+    lstm1 = layers.Bidirectional(
+        layers.LSTM(96, return_sequences=True,
+                    kernel_regularizer=regularizers.l1_l2(l1=1e-5, l2=1e-4))
+    )(x)
+    lstm1 = layers.LayerNormalization()(lstm1)
+    
+    # Второй BiLSTM
+    lstm2 = layers.Bidirectional(
+        layers.LSTM(64, return_sequences=True)
+    )(lstm1)
+    lstm2 = layers.LayerNormalization()(lstm2)
+
+    # Attention
+    attention = layers.MultiHeadAttention(
+        num_heads=num_heads,
+        key_dim=key_dim,
+        dropout=dropout_rate
+    )(query=lstm2, value=lstm2)
+
+    # Residual connection
+    residual = layers.Add()([lstm2, attention])
+
+    # Комбинирование
+    x = layers.GlobalAveragePooling1D()(residual)
+    x = layers.Dense(128, activation='swish')(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Dropout(dropout_rate)(x)
+
+    # Признаки для XGBoost
+    features = layers.Dense(64, activation='swish', name='features_for_xgb')(x)
+
+    # 🎯 Финальный выход для регрессии
+    output = layers.Dense(1, name='regression_output')(features)
+    
+    return tf.keras.Model(inputs=inputs, outputs=output)
+
 
 callbacks = [
-    tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True),
-    tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-7)
+    tf.keras.callbacks.EarlyStopping(
+        monitor='val_loss',
+        patience=10,
+        min_delta=0.001,
+        restore_best_weights=True
+    ),
+    tf.keras.callbacks.ModelCheckpoint(
+        'best_model.keras',
+        save_best_only=True,
+        monitor='val_loss'
+    )
 ]
-# === 6. LSTM Feature Extractor ===
 
-print("🧠 Обучение LSTM...")
+optimizer = tf.keras.optimizers.AdamW(
+    learning_rate=0.001,  # Фиксированное значение
+    weight_decay=0.001,
+    beta_1=0.9,
+    beta_2=0.999,
+    epsilon=1e-07,
+    amsgrad=True
+)
+
+def hybrid_loss(y_true, y_pred):
+    # MSE компонента
+    mse_loss = tf.reduce_mean(tf.square(y_true - y_pred))
+    
+    # MAE компонента с весами
+    abs_error = tf.abs(y_true - y_pred)
+    weights = tf.where(y_true < 1.0, 3.0, 1.0)
+    mae_loss = tf.reduce_mean(weights * abs_error)
+    
+    return 0.7 * mse_loss + 0.3 * mae_loss
+
+def hybrid_weighted_loss(y_true, y_pred):
+    mse_loss = tf.reduce_mean(tf.square(y_true - y_pred))
+    abs_error = tf.abs(y_true - y_pred)
+
+    # Вес обратно пропорционален значению y_true (с ограничением сверху и снизу)
+    weights = 1.0 / (tf.abs(y_true) + 1e-3)
+    weights = tf.clip_by_value(weights, 1.0, 10.0)  # Ограничим экстремумы
+
+    mae_loss = tf.reduce_mean(weights * abs_error)
+
+    return 0.5 * mse_loss + 0.5 * mae_loss
+
+
+def relative_weighted_loss(y_true, y_pred, eps=1e-6):
+    abs_error = tf.abs(y_true - y_pred)
+    
+    # Веса: 1 / y_true — чтобы относительная ошибка больше влияла
+    weights = 1.0 / (tf.abs(y_true) + eps)
+    
+    # Для коротких маршрутов (< 1 день) можно снизить вес
+    weights = tf.where(y_true < 1.0, 0.5, weights)
+    
+    # MAE с учетом весов
+    weighted_mae = tf.reduce_mean(weights * abs_error)
+    
+    return weighted_mae
+
+# Инициализация модели
+
+# Построим модель
+lstm_model = build_feature_lstm_model(input_shape=(X_train.shape[1], X_train.shape[2]))
+
+# Компилируем модель
+lstm_model.compile(
+    optimizer=optimizer,
+    loss=hybrid_loss,
+    metrics=['mae']
+)
+
+# Обучаем
 history = lstm_model.fit(
     X_train, y_train,
     validation_data=(X_test, y_test),
-    epochs=50,
-    batch_size=32,  # Можете попробовать уменьшить до 16
+    epochs=100,
+    batch_size=32,
     callbacks=callbacks,
-    verbose=1  # Для подробных логов
+    verbose=1
 )
 
 # После обучения LSTM
 plot_training_history(history)
 
-# Создаем Feature Extractor на основе обученной модели
-inputs = tf.keras.Input(shape=(X_train.shape[1], X_train.shape[2]))
-x = lstm_model.layers[0](inputs)  # Bidirectional LSTM
-x = lstm_model.layers[1](x)       # Dropout
-x = lstm_model.layers[2](x)       # LSTM
-x = lstm_model.layers[3](x)       # Dropout
-x = lstm_model.layers[4](x)       # Dense(32)
-x = lstm_model.layers[5](x)       # Dense(16)
-feature_output = lstm_model.layers[6](x)  # Dense(8) — наш слой признаков
-
-# # СОЗДАНИЕ FEATURE EXTRACTOR (на основе обученной модели)
-feature_extractor = tf.keras.Model(inputs=inputs, outputs=feature_output)
-
-print("📐 Извлечение признаков...")
+# Модель, извлекающая признаки
+feature_extractor = tf.keras.Model(
+    inputs=lstm_model.input,  # Входной слой модели
+    outputs=lstm_model.get_layer('features_for_xgb').output  # Промежуточный слой для извлечения признаков
+)
 X_train_features = feature_extractor.predict(X_train)
 X_test_features = feature_extractor.predict(X_test)
 
+
 # === 8. XGBoost ===
 xgb_model = xgb.XGBRegressor(
-    max_depth=9, 
-    learning_rate=0.06836538089683836,
-    n_estimators=575, 
-    subsample=0.594983861926637, 
-    colsample_bytree=0.5000096450822888,
-    gamma=0.010825397996025832, 
-    reg_alpha=0.6599784561094663,
-    reg_lambda=0.1936889676678525,
+    max_depth=6, 
+    learning_rate=0.08654969092291069,
+    n_estimators=496, 
+    subsample=0.8648324782679198, 
+    colsample_bytree=0.7177686830730101,
+    gamma=0.005168380231533848, 
+    reg_alpha=0.49457023434877395,
+    reg_lambda=0.30214603419143765,
     objective='reg:squarederror'
 )
 
@@ -191,22 +325,33 @@ xgb_model = xgb.XGBRegressor(
 #     reg_lambda=1.0
 # )
 
+# Обучение XGBoost
 print("Обучение XGBoost...")
 xgb_model.fit(X_train_features, y_train)
-# Визуализация важности признаков XGBoost
-plt.figure(figsize=(10, 6))
-xgb.plot_importance(xgb_model)
-plt.title('Feature Importance')
-plt.tight_layout()
-plt.savefig('artifacts/xgb_feature_importance.png')
-plt.show()
 
+def weighted_mae(y_true, y_pred, eps=1e-6):
+    weights = 1 / (np.abs(y_true) + eps)  # Основной вес
+    weights = np.where(y_true < 3600, 1.0, weights)  # Для рейсов <1 часа фиксируем вес=1
+    return np.mean(weights * np.abs(y_pred - y_true))
+
+def relative_mae(y_true, y_pred, eps=1e-6):
+    return np.mean(np.abs(y_pred - y_true) / (np.abs(y_true) + eps))
+
+
+# После получения предсказаний (ваш текущий код):
 y_pred = xgb_model.predict(X_test_features)
 y_pred_original = label_scaler.inverse_transform(y_pred.reshape(-1, 1)).flatten()
 y_test_original = label_scaler.inverse_transform(y_test.reshape(-1, 1)).flatten()
 
-print("📊 MAE (scaled):", mean_absolute_error(y_test, y_pred))
+# Оценка в оригинальном масштабе (дни)
 print("📊 MAE (original):", mean_absolute_error(y_test_original, y_pred_original))
+print("📊 Weighted MAE (original):", weighted_mae(y_test_original, y_pred_original))
+print("📊 Relative MAE (original):", relative_mae(y_test_original, y_pred_original) * 100, "%")
+
+# Оценка в scaled-масштабе (если нужно)
+print("📊 MAE (scaled):", mean_absolute_error(y_test, y_pred))
+print("📊 Weighted MAE (scaled):", weighted_mae(y_test, y_pred))
+print("📊 Relative MAE (scaled):", relative_mae(y_test, y_pred) * 100, "%")
 
 # === 9. Сохранение ===
 print("💾 Сохранение моделей...")

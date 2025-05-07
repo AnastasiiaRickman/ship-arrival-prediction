@@ -8,17 +8,17 @@ from api.get_meteo import get_meteo_data
 def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
     #df = get_meteo_data(df)
     #df = df.drop(columns=['depth', 'latitude', 'longitude', 'time', 'index'])
-    df = df.rename(columns={
-        'mlotst_cglo': 'mlotst',
-        'siconc_cglo': 'siconc',
-        'sithick_cglo': 'sithick',
-        'so_cglo': 'so',
-        'thetao_cglo': 'thetao',
-        'uo_cglo': 'uo',
-        'vo_cglo': 'vo',
-        'so_cglo': 'so',
-        'zos_cglo': 'zos'
-    })
+    # df = df.rename(columns={
+    #     'mlotst_cglo': 'mlotst',
+    #     'siconc_cglo': 'siconc',
+    #     'sithick_cglo': 'sithick',
+    #     'so_cglo': 'so',
+    #     'thetao_cglo': 'thetao',
+    #     'uo_cglo': 'uo',
+    #     'vo_cglo': 'vo',
+    #     'so_cglo': 'so',
+    #     'zos_cglo': 'zos'
+    # })
     #df.fillna(0, inplace=True)  # Изменяет исходный датафрейм
     for column in df.select_dtypes(include=['float64', 'int64']).columns: 
         df[column] = df[column].fillna(df[column].mean())
@@ -55,8 +55,8 @@ def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
     # === НОРМАЛИЗАЦИЯ ЧИСЛОВЫХ ПРИЗНАКОВ ===
     num_cols = ["speed", "course", "lat_diff", "lon_diff", "course_diff", "log_distance", "speed_diff", "acceleration", "bearing_change"]
     # === МЕТЕОПРИЗНАКИ ===
-    meteo_cols = [col for col in df.columns if any(x in col for x in ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
-    df = apply_feature_scalers_from_saved(df, num_cols, meteo_cols)
+    # meteo_cols = [col for col in df.columns if any(x in col for x in ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
+    df = apply_feature_scalers_from_saved(df, num_cols)
     return df
 
 import os
