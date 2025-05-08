@@ -57,6 +57,10 @@ def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
     # === МЕТЕОПРИЗНАКИ ===
     # meteo_cols = [col for col in df.columns if any(x in col for x in ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
     df = apply_feature_scalers_from_saved(df, num_cols)
+
+    #temporal = ["hour", "dayofweek", "month", "season"]
+    #df = apply_feature_scalers_from_saved(df, num_cols, temporal)
+
     return df
 
 import os

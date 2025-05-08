@@ -47,7 +47,6 @@ def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
     df["course_diff"] = df["course"].diff().fillna(0)
     df["distance_to_destination"] = df.apply(
     lambda row: haversine(row["lat"], row["lon"], row["lat_destination"], row["lon_destination"]), axis=1)
-    df["log_distance"] = np.log1p(df["distance_to_destination"])  # Логарифмирование
 
     df["ETA_diff"] = df["timestamp_destination_unix"] - df["timestamp_unix"]
     df["relative_eta"] = df["ETA_diff"] / (df["distance_to_destination"] + 1e-3)
@@ -58,9 +57,13 @@ def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
     df["bearing_change"] = df["course"].diff().fillna(0)
     df["moving"] = (df["speed"] > 0).astype(int)
 
+    df["log_distance"] = np.log1p(df["distance_to_destination"])  # Логарифмирование
+    df["log_speed"] = np.log1p(df["speed"])
+    df["log_acceleration"] = np.log1p(df["acceleration"])
+
     # Удалим аномально высокие скорости
     df = df[df["speed"] < df["speed"].quantile(0.95)]
-    df = df[df["ETA_diff"] < df["ETA_diff"].quantile(0.95)]
+    df = df[df["ETA_diff"] < df["ETA_diff"].quantile(0.90)]
 
     return df
 
@@ -71,9 +74,6 @@ def preprocess_input_data_without_meteo(df: pd.DataFrame) -> pd.DataFrame:
     df = df.drop(columns=['seg_id'])
     # Удаляем строки с пропусками
     df.dropna(inplace=True)
-   #for column in df.select_dtypes(include=['float64', 'int64']).columns: 
-        #df[column] = df[column].fillna(df[column].mean())
-    #df.fillna(0, inplace=True)  # Изменяет исходный датафрейм
 
     # Обработка времени
     df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.tz_localize(None)
@@ -96,16 +96,18 @@ def preprocess_input_data_without_meteo(df: pd.DataFrame) -> pd.DataFrame:
     df["course_diff"] = df["course"].diff().fillna(0)
     df["distance_to_destination"] = df.apply(
     lambda row: haversine(row["lat"], row["lon"], row["lat_destination"], row["lon_destination"]), axis=1)
-    df["log_distance"] = np.log1p(df["distance_to_destination"])  # Логарифмирование
 
     df["ETA_diff"] = df["timestamp_destination_unix"] - df["timestamp_unix"]
     df = df[(df["ETA_diff"] > 60) & (df["ETA_diff"] < 86400 * 30)]  # От 1 минуты до 30 дней
+    # df["relative_eta"] = df["ETA_diff"] / (df["distance_to_destination"] + 1e-3)
 
     # Доп. признаки
     df["speed_diff"] = df["speed"].diff().fillna(0)
     df["acceleration"] = df["speed_diff"].diff().fillna(0)
     df["bearing_change"] = df["course"].diff().fillna(0)
     df["moving"] = (df["speed"] > 0).astype(int)
+
+    df["log_distance"] = np.log1p(df["distance_to_destination"])  # Логарифмирование
 
     # Удалим аномально высокие скорости
     df = df[df["speed"] < df["speed"].quantile(0.95)]

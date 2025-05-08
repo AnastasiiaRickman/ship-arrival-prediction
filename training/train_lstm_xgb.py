@@ -74,9 +74,6 @@ df = load_and_prepare_data(LOCAL_DATA_DIR)
 num_cols = ["speed", "course", "lat_diff", "lon_diff", "course_diff",
             "log_distance", "speed_diff", "acceleration", "bearing_change"]
 
-#meteo_cols = [col for col in df.columns if any(x in col for x in ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
-
-#df, num_scaler, meteo_scaler = fit_feature_scalers(df, num_cols, meteo_cols)
 df, num_scaler = fit_feature_scalers(df, num_cols)
 
 # === 3. Построение последовательностей ===
@@ -84,58 +81,29 @@ baseline = ["speed", "lat", "lon", "distance_to_destination"]
 geo = ["lat_diff", "lon_diff", "course_diff", "log_distance"]
 temporal = ["hour", "dayofweek", "month", "season"]
 dynamic = ["speed_diff", "acceleration", "bearing_change", "moving"]
-meteo = [col for col in df.columns if any(x in col for x in ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
 synthetic = ["log_distance"]
+
+#df, num_scaler, robust_scaler = fit_feature_scalers(df, num_cols, synthetic, temporal)
 
 feature_cols = baseline + geo + temporal + dynamic + synthetic
 joblib.dump(feature_cols, 'models/feature_cols.pkl')
+# тут проверить метку!!!
 dataset, labels = create_sequences(df[feature_cols].values, df["ETA_diff"].values, seq_length=10)
-
-# def create_dynamic_sequences(df, min_length=5, max_length=30):
-#     sequences = []
-#     labels = []
-    
-#     # Группируем по уникальным точкам назначения и времени прибытия
-#     grouped = df.groupby(['timestamp_destination', 'seg_id']) 
-    
-#     for (dest_time, seg_id), group in grouped:
-#         # Сортируем по времени наблюдения
-#         group = group.sort_values('timestamp')
-        
-#         # Определяем длину последовательности динамически
-#         seq_length = min(max_length, 
-#                         max(min_length, 
-#                             len(group) // 2))  # Пример: половина доступных точек
-        
-#         # Создаем последовательности
-#         for i in range(len(group) - seq_length):
-#             seq = group.iloc[i:i+seq_length][feature_cols].values
-#             label = group.iloc[i+seq_length]['ETA_diff']
-#             sequences.append(seq)
-#             labels.append(label)
-    
-#     return sequences, np.array(labels)
-# dataset, labels = create_dynamic_sequences(df)
+_, distances = create_sequences(
+    df[feature_cols].values,
+    df["distance_to_destination"].values,
+    seq_length=10
+)
 
 # === 4. Делим данные ===
-# from tensorflow.keras.preprocessing.sequence import pad_sequences
-
-# # padding='post' -> добивать нулями в конец, dtype='float32' — как ожидает LSTM
-# padded_dataset = pad_sequences(dataset, padding='post', dtype='float32')
 
 X_train, X_test, y_train, y_test = train_test_split(dataset, labels, test_size=0.2, random_state=42)
-# X_train, X_test, y_train, y_test = train_test_split(
-#     padded_dataset,
-#     np.array(labels),
-#     test_size=0.2,
-#     random_state=42
-# )
-
 
 # === 5. Нормализация ===
 
 from sklearn.preprocessing import RobustScaler
-X_scaler = RobustScaler(quantile_range=(10, 90))
+# X_scaler = RobustScaler(quantile_range=(5, 95))
+X_scaler = StandardScaler()
 X_train = X_scaler.fit_transform(X_train.reshape(-1, X_train.shape[-1])).reshape(X_train.shape)
 X_test = X_scaler.transform(X_test.reshape(-1, X_test.shape[-1])).reshape(X_test.shape)
 joblib.dump(X_scaler, 'models/X_scaler.pkl')
@@ -143,22 +111,6 @@ label_scaler = StandardScaler()
 y_train = label_scaler.fit_transform(y_train.reshape(-1, 1)).flatten()
 y_test = label_scaler.transform(y_test.reshape(-1, 1)).flatten()
 joblib.dump(label_scaler, 'models/label_scaler.pkl')
-
-# === 6. LSTM модель ===
-
-# lstm_model = tf.keras.Sequential([
-#     tf.keras.Input(shape=(X_train.shape[1], X_train.shape[2])),  # 👈 теперь input здесь
-#     tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(128, return_sequences=True)),
-#     tf.keras.layers.Dropout(0.2),
-#     tf.keras.layers.LSTM(64, return_sequences=True),
-#     tf.keras.layers.Dropout(0.2),
-#     tf.keras.layers.LSTM(32),
-#     tf.keras.layers.Dropout(0.1),
-#     tf.keras.layers.Dense(32, activation='relu'),
-#     tf.keras.layers.Dense(16, activation='relu'),
-#     tf.keras.layers.Dense(1)
-# ])
-
 
 from tensorflow.keras import layers, regularizers
 
@@ -240,33 +192,6 @@ def hybrid_loss(y_true, y_pred):
     
     return 0.7 * mse_loss + 0.3 * mae_loss
 
-def hybrid_weighted_loss(y_true, y_pred):
-    mse_loss = tf.reduce_mean(tf.square(y_true - y_pred))
-    abs_error = tf.abs(y_true - y_pred)
-
-    # Вес обратно пропорционален значению y_true (с ограничением сверху и снизу)
-    weights = 1.0 / (tf.abs(y_true) + 1e-3)
-    weights = tf.clip_by_value(weights, 1.0, 10.0)  # Ограничим экстремумы
-
-    mae_loss = tf.reduce_mean(weights * abs_error)
-
-    return 0.5 * mse_loss + 0.5 * mae_loss
-
-
-def relative_weighted_loss(y_true, y_pred, eps=1e-6):
-    abs_error = tf.abs(y_true - y_pred)
-    
-    # Веса: 1 / y_true — чтобы относительная ошибка больше влияла
-    weights = 1.0 / (tf.abs(y_true) + eps)
-    
-    # Для коротких маршрутов (< 1 день) можно снизить вес
-    weights = tf.where(y_true < 1.0, 0.5, weights)
-    
-    # MAE с учетом весов
-    weighted_mae = tf.reduce_mean(weights * abs_error)
-    
-    return weighted_mae
-
 # Инициализация модели
 
 # Построим модель
@@ -283,8 +208,8 @@ lstm_model.compile(
 history = lstm_model.fit(
     X_train, y_train,
     validation_data=(X_test, y_test),
-    epochs=100,
-    batch_size=32,
+    epochs=300,
+    batch_size=64,
     callbacks=callbacks,
     verbose=1
 )
@@ -338,7 +263,7 @@ def relative_mae(y_true, y_pred, eps=1e-6):
     return np.mean(np.abs(y_pred - y_true) / (np.abs(y_true) + eps))
 
 
-# После получения предсказаний (ваш текущий код):
+# После получения предсказаний
 y_pred = xgb_model.predict(X_test_features)
 y_pred_original = label_scaler.inverse_transform(y_pred.reshape(-1, 1)).flatten()
 y_test_original = label_scaler.inverse_transform(y_test.reshape(-1, 1)).flatten()
@@ -352,6 +277,7 @@ print("📊 Relative MAE (original):", relative_mae(y_test_original, y_pred_orig
 print("📊 MAE (scaled):", mean_absolute_error(y_test, y_pred))
 print("📊 Weighted MAE (scaled):", weighted_mae(y_test, y_pred))
 print("📊 Relative MAE (scaled):", relative_mae(y_test, y_pred) * 100, "%")
+
 
 # === 9. Сохранение ===
 print("💾 Сохранение моделей...")
