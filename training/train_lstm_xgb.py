@@ -83,11 +83,9 @@ temporal = ["hour", "dayofweek", "month", "season"]
 dynamic = ["speed_diff", "acceleration", "bearing_change", "moving"]
 synthetic = ["log_distance"]
 
-#df, num_scaler, robust_scaler = fit_feature_scalers(df, num_cols, synthetic, temporal)
-
 feature_cols = baseline + geo + temporal + dynamic + synthetic
 joblib.dump(feature_cols, 'models/feature_cols.pkl')
-# тут проверить метку!!!
+
 dataset, labels = create_sequences(df[feature_cols].values, df["ETA_diff"].values, seq_length=10)
 _, distances = create_sequences(
     df[feature_cols].values,
@@ -102,7 +100,6 @@ X_train, X_test, y_train, y_test = train_test_split(dataset, labels, test_size=0
 # === 5. Нормализация ===
 
 from sklearn.preprocessing import RobustScaler
-# X_scaler = RobustScaler(quantile_range=(5, 95))
 X_scaler = StandardScaler()
 X_train = X_scaler.fit_transform(X_train.reshape(-1, X_train.shape[-1])).reshape(X_train.shape)
 X_test = X_scaler.transform(X_test.reshape(-1, X_test.shape[-1])).reshape(X_test.shape)
@@ -152,7 +149,7 @@ def build_feature_lstm_model(input_shape, num_heads=4, key_dim=64, dropout_rate=
     # Признаки для XGBoost
     features = layers.Dense(64, activation='swish', name='features_for_xgb')(x)
 
-    # 🎯 Финальный выход для регрессии
+    # Финальный выход для регрессии
     output = layers.Dense(1, name='regression_output')(features)
     
     return tf.keras.Model(inputs=inputs, outputs=output)
@@ -173,7 +170,7 @@ callbacks = [
 ]
 
 optimizer = tf.keras.optimizers.AdamW(
-    learning_rate=0.001,  # Фиксированное значение
+    learning_rate=0.001,  
     weight_decay=0.001,
     beta_1=0.9,
     beta_2=0.999,
@@ -191,8 +188,6 @@ def hybrid_loss(y_true, y_pred):
     mae_loss = tf.reduce_mean(weights * abs_error)
     
     return 0.7 * mse_loss + 0.3 * mae_loss
-
-# Инициализация модели
 
 # Построим модель
 lstm_model = build_feature_lstm_model(input_shape=(X_train.shape[1], X_train.shape[2]))
@@ -239,24 +234,13 @@ xgb_model = xgb.XGBRegressor(
     objective='reg:squarederror'
 )
 
-# xgb_model = xgb.XGBRegressor(
-#     max_depth=6,
-#     learning_rate=0.05,
-#     n_estimators=500,
-#     subsample=0.8,
-#     colsample_bytree=0.8,
-#     gamma=1,
-#     reg_alpha=0.3,
-#     reg_lambda=1.0
-# )
-
 # Обучение XGBoost
 print("Обучение XGBoost...")
 xgb_model.fit(X_train_features, y_train)
 
 def weighted_mae(y_true, y_pred, eps=1e-6):
     weights = 1 / (np.abs(y_true) + eps)  # Основной вес
-    weights = np.where(y_true < 3600, 1.0, weights)  # Для рейсов <1 часа фиксируем вес=1
+    weights = np.where(y_true < 86400, 1.0, weights)  # Для рейсов <1 дня фиксируем вес=1
     return np.mean(weights * np.abs(y_pred - y_true))
 
 def relative_mae(y_true, y_pred, eps=1e-6):

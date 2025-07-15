@@ -6,20 +6,7 @@ from preprocessing.scaling import apply_feature_scalers_from_saved
 from api.get_meteo import get_meteo_data
 
 def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
-    #df = get_meteo_data(df)
-    #df = df.drop(columns=['depth', 'latitude', 'longitude', 'time', 'index'])
-    # df = df.rename(columns={
-    #     'mlotst_cglo': 'mlotst',
-    #     'siconc_cglo': 'siconc',
-    #     'sithick_cglo': 'sithick',
-    #     'so_cglo': 'so',
-    #     'thetao_cglo': 'thetao',
-    #     'uo_cglo': 'uo',
-    #     'vo_cglo': 'vo',
-    #     'so_cglo': 'so',
-    #     'zos_cglo': 'zos'
-    # })
-    #df.fillna(0, inplace=True)  # Изменяет исходный датафрейм
+
     for column in df.select_dtypes(include=['float64', 'int64']).columns: 
         df[column] = df[column].fillna(df[column].mean())
 
@@ -49,17 +36,9 @@ def preprocess_input_data(df: pd.DataFrame) -> pd.DataFrame:
     df["bearing_change"] = df["course"].diff().fillna(0)
     df["moving"] = (df["speed"] > 0).astype(int)
 
-    # === ОБРАБОТКА ВЫБРОСОВ ===
-    #df = df[df["speed"] < df["speed"].quantile(0.99)]
-
     # === НОРМАЛИЗАЦИЯ ЧИСЛОВЫХ ПРИЗНАКОВ ===
     num_cols = ["speed", "course", "lat_diff", "lon_diff", "course_diff", "log_distance", "speed_diff", "acceleration", "bearing_change"]
-    # === МЕТЕОПРИЗНАКИ ===
-    # meteo_cols = [col for col in df.columns if any(x in col for x in ["mlotst", "siconc", "sithick", "so", "thetao", "uo", "vo", "zos"])]
     df = apply_feature_scalers_from_saved(df, num_cols)
-
-    #temporal = ["hour", "dayofweek", "month", "season"]
-    #df = apply_feature_scalers_from_saved(df, num_cols, temporal)
 
     return df
 
@@ -72,22 +51,9 @@ import xgboost as xgb
 from datetime import timedelta
 
 def predict_eta_from_new_data(df_new, seq_length=10, model_dir='models'):
-    """
-    Прогноз ETA_diff и итогового ETA по последней строке новых данных судна.
-
-    Все модели и скейлеры загружаются из директории model_dir.
-
-    Возвращает:
-    - ETA_diff (в секундах)
-    - ETA (datetime: timestamp последней строки + ETA_diff)
-    """
-    print("==> Колонки на входе в predict:", df_new.columns)
-    if 'timestamp' not in df_new.columns:
-        raise ValueError("В DataFrame отсутствует колонка 'timestamp'.")
 
     # Загружаем feature_cols
     feature_cols = joblib.load("models/feature_cols.pkl")
-    #feature_cols = ['lat', 'lon', 'speed', 'course', 'lat_diff', 'lon_diff', 'course_diff', 'log_distance', 'speed_diff', 'acceleration', 'bearing_change', 'moving', 'mlotst', 'siconc', 'sithick', 'so', 'thetao', 'uo', 'vo', 'zos']
     # Загружаем скейлеры
     scaler = joblib.load("models/X_scaler.pkl")
     label_scaler = joblib.load("models/label_scaler.pkl")
